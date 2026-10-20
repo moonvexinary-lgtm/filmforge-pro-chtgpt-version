@@ -20,7 +20,13 @@ pub struct Project {
 
 impl Project {
     pub fn new(name: impl Into<String>, settings: SequenceSettings) -> Self {
-        Self { format_version: 1, name: name.into(), settings, assets: BTreeMap::new(), tracks: Vec::new() }
+        Self {
+            format_version: 1,
+            name: name.into(),
+            settings,
+            assets: BTreeMap::new(),
+            tracks: Vec::new(),
+        }
     }
 
     pub fn save_json(&self) -> Result<String, serde_json::Error> {
@@ -35,7 +41,13 @@ impl Project {
         self.tracks
             .iter()
             .enumerate()
-            .filter_map(|(track_index, track)| track.clips.iter().find(|clip| clip.timeline_range().contains(time)).map(|clip| ClipRef { track_index, clip }))
+            .filter_map(|(track_index, track)| {
+                track
+                    .clips
+                    .iter()
+                    .find(|clip| clip.timeline_range().contains(time))
+                    .map(|clip| ClipRef { track_index, clip })
+            })
             .collect()
     }
 }
@@ -50,19 +62,34 @@ pub struct SequenceSettings {
 
 impl Default for SequenceSettings {
     fn default() -> Self {
-        Self { frame_rate: RationalFrameRate::from(FrameRate::FPS_24), width: 1920, height: 1080, audio_sample_rate: 48_000 }
+        Self {
+            frame_rate: RationalFrameRate::from(FrameRate::FPS_24),
+            width: 1920,
+            height: 1080,
+            audio_sample_rate: 48_000,
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RationalFrameRate { pub numerator: i64, pub denominator: i64 }
+pub struct RationalFrameRate {
+    pub numerator: i64,
+    pub denominator: i64,
+}
 
 impl From<FrameRate> for RationalFrameRate {
-    fn from(value: FrameRate) -> Self { Self { numerator: value.num, denominator: value.den } }
+    fn from(value: FrameRate) -> Self {
+        Self {
+            numerator: value.num,
+            denominator: value.den,
+        }
+    }
 }
 
 impl From<RationalFrameRate> for FrameRate {
-    fn from(value: RationalFrameRate) -> Self { FrameRate::new(value.numerator, value.denominator) }
+    fn from(value: RationalFrameRate) -> Self {
+        FrameRate::new(value.numerator, value.denominator)
+    }
 }
 
 pub type AssetId = String;
@@ -87,7 +114,10 @@ pub struct Track {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TrackKind { Video, Audio }
+pub enum TrackKind {
+    Video,
+    Audio,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Clip {
@@ -100,17 +130,30 @@ pub struct Clip {
 }
 
 impl Clip {
-    pub fn timeline_range(&self) -> TimeRange { TimeRange::new(self.start.into(), self.duration.into()) }
+    pub fn timeline_range(&self) -> TimeRange {
+        TimeRange::new(self.start.into(), self.duration.into())
+    }
 }
 
-pub struct ClipRef<'a> { pub track_index: usize, pub clip: &'a Clip }
+pub struct ClipRef<'a> {
+    pub track_index: usize,
+    pub clip: &'a Clip,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TickValue(pub i64);
 
-impl From<Tick> for TickValue { fn from(value: Tick) -> Self { Self(value.0) } }
-impl From<TickValue> for Tick { fn from(value: TickValue) -> Self { Tick(value.0) } }
+impl From<Tick> for TickValue {
+    fn from(value: Tick) -> Self {
+        Self(value.0)
+    }
+}
+impl From<TickValue> for Tick {
+    fn from(value: TickValue) -> Self {
+        Tick(value.0)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EffectInstance {
@@ -130,16 +173,28 @@ impl AnimatedValue {
     /// Deterministic step evaluation.  Curve interpolation is intentionally delegated to the
     /// EffectCraft adapter until its property semantics are mapped losslessly.
     pub fn evaluate(&self, time: Tick) -> ScalarValue {
-        self.keyframes.iter().rev().find(|key| Tick::from(key.time) <= time).map(|key| key.value.clone()).unwrap_or_else(|| self.default.clone())
+        self.keyframes
+            .iter()
+            .rev()
+            .find(|key| Tick::from(key.time) <= time)
+            .map(|key| key.value.clone())
+            .unwrap_or_else(|| self.default.clone())
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Keyframe { pub time: TickValue, pub value: ScalarValue }
+pub struct Keyframe {
+    pub time: TickValue,
+    pub value: ScalarValue,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum ScalarValue { Number(f64), Boolean(bool), Text(String) }
+pub enum ScalarValue {
+    Number(f64),
+    Boolean(bool),
+    Text(String),
+}
 
 #[cfg(test)]
 mod tests {
@@ -148,13 +203,50 @@ mod tests {
     #[test]
     fn project_round_trip_preserves_effect_animation_and_exact_time() {
         let mut project = Project::new("integration proof", SequenceSettings::default());
-        project.assets.insert("asset-a".into(), MediaAsset { id: "asset-a".into(), source_path: "fixture.mp4".into(), duration: TickValue(TICKS_PER_SECOND), proxy_path: None });
-        project.tracks.push(Track { id: "V1".into(), kind: TrackKind::Video, locked: false, visible: true, muted: false, solo: false, clips: vec![Clip {
-            id: "clip-a".into(), asset_id: "asset-a".into(), start: TickValue::default(), source_in: TickValue::default(), duration: TickValue(TICKS_PER_SECOND),
-            effects: vec![EffectInstance { effect_id: "ec.color.exposure".into(), enabled: true, parameters: BTreeMap::from([("exposure".into(), AnimatedValue { default: ScalarValue::Number(0.0), keyframes: vec![Keyframe { time: TickValue(TICKS_PER_SECOND / 2), value: ScalarValue::Number(1.0) }] })]) }],
-        }] });
+        project.assets.insert(
+            "asset-a".into(),
+            MediaAsset {
+                id: "asset-a".into(),
+                source_path: "fixture.mp4".into(),
+                duration: TickValue(TICKS_PER_SECOND),
+                proxy_path: None,
+            },
+        );
+        project.tracks.push(Track {
+            id: "V1".into(),
+            kind: TrackKind::Video,
+            locked: false,
+            visible: true,
+            muted: false,
+            solo: false,
+            clips: vec![Clip {
+                id: "clip-a".into(),
+                asset_id: "asset-a".into(),
+                start: TickValue::default(),
+                source_in: TickValue::default(),
+                duration: TickValue(TICKS_PER_SECOND),
+                effects: vec![EffectInstance {
+                    effect_id: "ec.color.exposure".into(),
+                    enabled: true,
+                    parameters: BTreeMap::from([(
+                        "exposure".into(),
+                        AnimatedValue {
+                            default: ScalarValue::Number(0.0),
+                            keyframes: vec![Keyframe {
+                                time: TickValue(TICKS_PER_SECOND / 2),
+                                value: ScalarValue::Number(1.0),
+                            }],
+                        },
+                    )]),
+                }],
+            }],
+        });
         let loaded = Project::load_json(&project.save_json().unwrap()).unwrap();
         assert_eq!(loaded, project);
-        assert_eq!(loaded.tracks[0].clips[0].effects[0].parameters["exposure"].evaluate(Tick(TICKS_PER_SECOND / 2)), ScalarValue::Number(1.0));
+        assert_eq!(
+            loaded.tracks[0].clips[0].effects[0].parameters["exposure"]
+                .evaluate(Tick(TICKS_PER_SECOND / 2)),
+            ScalarValue::Number(1.0)
+        );
     }
 }
