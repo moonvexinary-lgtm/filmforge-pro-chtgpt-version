@@ -1,0 +1,65 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+
+jobs:
+  verify:
+    name: Format, check, test, and lint
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report available runner storage
+        shell: pwsh
+        run: Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free -AutoSize
+      - uses: dtolnay/rust-toolchain@1.95
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: frameforge-windows-1
+          cache-targets: false
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Compile workspace
+        run: cargo check --workspace --all-targets
+      - name: Run unit and integration tests
+        run: cargo test --workspace
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  package:
+    name: Package Windows development build
+    needs: verify
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report available runner storage
+        shell: pwsh
+        run: Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free -AutoSize
+      - uses: dtolnay/rust-toolchain@1.95
+      - name: Build Windows release executable
+        run: cargo build --release -p frameforge-pro
+      - name: Create application package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/frameforge-pro.exe dist/FrameForgePro.exe
+          Compress-Archive -Path dist/FrameForgePro.exe -DestinationPath FrameForgePro-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FrameForgePro-windows-x64
+          path: FrameForgePro-windows-x64.zip
+          retention-days: 7
+          if-no-files-found: error

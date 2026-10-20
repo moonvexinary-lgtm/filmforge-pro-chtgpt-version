@@ -1,0 +1,13 @@
+[package]
+name = "frameforge-pro"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+frameforge-core = { path = "../../crates/frameforge-core" }
+frameforge-effects-bridge = { path = "../../crates/frameforge-effects-bridge" }
+
+[lints]
+workspace = true
